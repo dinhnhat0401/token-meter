@@ -52,8 +52,8 @@ After install, launch **Meter** from Spotlight or Applications. The first launch
 ## Build from source
 
 ```bash
-git clone https://github.com/dinhnhat0401/meter.git
-cd meter
+git clone https://github.com/dinhnhat0401/token-meter.git
+cd token-meter
 brew install xcodegen
 xcodegen generate
 open Meter.xcodeproj
