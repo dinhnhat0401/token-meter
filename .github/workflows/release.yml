@@ -1,0 +1,78 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: macos-14
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Import Developer ID certificate
+        env:
+          P12_BASE64: ${{ secrets.DEVELOPER_ID_CERT_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
+
+      - name: Run tests
+        run: |
+          xcodegen generate
+          xcodebuild -project Meter.xcodeproj -scheme Meter \
+            -destination "platform=macOS" test
+
+      - name: Build & notarize
+        run: |
+          scripts/build.sh
+          scripts/notarize.sh
+
+      - name: Package DMG
+        id: dmg
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          scripts/release.sh "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dmg=dist/Meter-${VERSION}.dmg" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(shasum -a 256 "dist/Meter-${VERSION}.dmg" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.dmg.outputs.dmg }}
+          body: |
+            Meter ${{ steps.dmg.outputs.version }}
+
+            **DMG SHA-256:** `${{ steps.dmg.outputs.sha256 }}`
+
+            Paste into the cask at https://github.com/dinhnhat0401/homebrew-tap:
+
+            ```
+            version "${{ steps.dmg.outputs.version }}"
+            sha256 "${{ steps.dmg.outputs.sha256 }}"
+            ```
