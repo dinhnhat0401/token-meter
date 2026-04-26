@@ -20,20 +20,8 @@ if ! command -v xcodegen >/dev/null 2>&1; then
 fi
 
 mkdir -p ./dist
+rm -rf "$ARCHIVE_PATH" "$EXPORT_PATH/Meter.app"
 xcodegen generate
-
-cat > "$EXPORT_OPTIONS" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>method</key>
-    <string>developer-id</string>
-    <key>signingStyle</key>
-    <string>manual</string>
-</dict>
-</plist>
-EOF
 
 xcodebuild \
   -project "$PROJECT" \
@@ -47,10 +35,27 @@ xcodebuild \
   DEVELOPMENT_TEAM="${APPLE_TEAM_ID:-}" \
   archive
 
-xcodebuild \
-  -exportArchive \
-  -archivePath "$ARCHIVE_PATH" \
-  -exportPath "$EXPORT_PATH" \
-  -exportOptionsPlist "$EXPORT_OPTIONS"
+if [[ -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then
+  cat > "$EXPORT_OPTIONS" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key>
+    <string>developer-id</string>
+    <key>signingStyle</key>
+    <string>manual</string>
+</dict>
+</plist>
+EOF
+  xcodebuild \
+    -exportArchive \
+    -archivePath "$ARCHIVE_PATH" \
+    -exportPath "$EXPORT_PATH" \
+    -exportOptionsPlist "$EXPORT_OPTIONS"
+else
+  echo "==> No Developer ID configured — copying ad-hoc-signed app from archive."
+  cp -R "$ARCHIVE_PATH/Products/Applications/Meter.app" "$EXPORT_PATH/Meter.app"
+fi
 
 echo "Built: $EXPORT_PATH/Meter.app"
